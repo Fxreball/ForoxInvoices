@@ -1,0 +1,5 @@
+# Negeer environment files
+.env
+
+# Negeer modules
+node_modules
