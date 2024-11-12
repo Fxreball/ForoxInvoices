@@ -1,6 +1,8 @@
 const express = require('express');
 const { getInvoices } = require('./mail'); // Import the function from mail.js
 const { MongoClient } = require('mongodb');
+const dotenv = require('dotenv');
+dotenv.config();
 const app = express();
 
 const uri = process.env.MONGO_URI;

@@ -5,7 +5,7 @@ const dotenv = require('dotenv');
 
 dotenv.config();
 
-var imap = new Imap({
+const imap = new Imap({
     user: process.env.IMAP_USER,
     password: process.env.IMAP_PASS,
     host: process.env.IMAP_HOST,
@@ -13,106 +13,101 @@ var imap = new Imap({
     tls: true
 });
 
-// Function to open inbox
-function openInbox(cb) {
-    imap.openBox('INBOX', false, cb);
+// Open de inbox
+function openInbox() {
+    return new Promise((resolve, reject) => {
+        imap.openBox('INBOX', false, (err, box) => {
+            if (err) reject(`Error tijdens het openen van inbox: ${err}`);
+            else resolve(box);
+        });
+    });
 }
 
-// Check if attachment is supported
+// Controleer of de bijlage een XML-bestand is
 function isXml(attachment) {
-    return attachment.contentType && attachment.contentType.toLowerCase().includes('xml'); // Check if XML
+    return attachment.contentType && attachment.contentType.toLowerCase().includes('xml');
 }
 
-// Helper function to flatten the result
+// Helper om het XML-resultaat te "flattenen"
 function flattenXmlResult(result) {
-    // Recursively flatten all arrays that only have one item
     const flatten = (obj) => {
         for (const key in obj) {
             if (Array.isArray(obj[key]) && obj[key].length === 1) {
-                obj[key] = obj[key][0]; // Replace array with its single value
+                obj[key] = obj[key][0];
             }
             if (typeof obj[key] === 'object' && obj[key] !== null) {
-                flatten(obj[key]); // Recursively flatten nested objects
+                flatten(obj[key]);
             }
         }
     };
-    
     flatten(result);
     return result;
 }
 
-// Modify the parseXmlToJson function to use this helper
+// Parse XML naar JSON en "flatten"
 function parseXmlToJson(xmlContent) {
-    const parser = new xml2js.Parser();
     return new Promise((resolve, reject) => {
+        const parser = new xml2js.Parser();
         parser.parseString(xmlContent, (err, result) => {
             if (err) {
-                reject('Error bij het verwerken van het XML-bestand:', err);
+                reject(`Fout bij het verwerken van het XML-bestand: ${err}`);
             } else {
-                const flattenedResult = flattenXmlResult(result);
-                resolve(flattenedResult);
+                resolve(flattenXmlResult(result));
             }
         });
     });
 }
 
-// In the getInvoices function
+// Ophalen van facturen
 async function getInvoices() {
     return new Promise((resolve, reject) => {
         const invoiceData = [];
 
-        imap.once('ready', function () {
-            openInbox(function (err, box) {
-                if (err) {
-                    reject('Error tijdens het openen van inbox:', err);
-                    return;
-                }
-
+        imap.once('ready', async () => {
+            try {
+                await openInbox();
                 console.log('Zoeken naar emails...');
-
-                // Search for unseen emails
-                imap.search(['UNSEEN'], function (err, results) {
+                
+                imap.search(['UNSEEN'], (err, results) => {
                     if (err) {
-                        reject('Error tijdens het zoeken naar emails:', err);
-                        return imap.end();
+                        reject(`Error tijdens het zoeken naar emails: ${err}`);
+                        imap.end();
+                        return;
                     }
-
-                    if (results && results.length > 0) {
-                        // Mark found emails as read
-                        imap.setFlags(results, ['\\Seen'], function (err) {
-                            if (!err) {
-                                console.log("Gevonden emails gemarkeerd als gelezen.");
+                    
+                    if (results.length > 0) {
+                        imap.setFlags(results, ['\\Seen'], (err) => {
+                            if (err) {
+                                console.log(`Error tijdens het markeren als gelezen: ${err}`);
                             } else {
-                                console.log('Error tijdens het markeren als gelezen:', JSON.stringify(err, null, 2));
+                                console.log("Gevonden emails gemarkeerd als gelezen.");
                             }
                         });
 
-                        // Fetch each email one at a time (do not call this multiple times)
+                        // Process emails sequentially
                         const processEmailsSequentially = async () => {
                             for (const seqno of results) {
                                 await new Promise((resolveEmail) => {
                                     const fetch = imap.fetch([seqno], { bodies: '' });
-
                                     fetch.on('message', (msg) => {
                                         msg.on('body', (stream) => {
                                             simpleParser(stream, async (err, parsed) => {
                                                 if (err) {
-                                                    console.error('Error bij het verwerken van de email:', err);
-                                                    resolveEmail(); // Ensure we move to next email
+                                                    console.error(`Error bij het verwerken van de email: ${err}`);
+                                                    resolveEmail();
                                                     return;
                                                 }
 
                                                 if (parsed.attachments && parsed.attachments.length > 0) {
                                                     console.log(`Bijlage gevonden in email ${seqno}`);
-
                                                     for (const attachment of parsed.attachments) {
                                                         if (isXml(attachment)) {
                                                             console.log(`XML-bestand: ${attachment.filename}`);
                                                             try {
                                                                 const jsonData = await parseXmlToJson(attachment.content);
-                                                                invoiceData.push(jsonData); // Add parsed data to invoiceData
+                                                                invoiceData.push(jsonData);
                                                             } catch (parseError) {
-                                                                console.error('Fout bij het parsen van XML:', parseError);
+                                                                console.error(`Fout bij het parsen van XML: ${parseError}`);
                                                             }
                                                         } else {
                                                             console.log(`Overbodige bestanden overgeslagen: ${attachment.filename}`);
@@ -121,39 +116,40 @@ async function getInvoices() {
                                                 } else {
                                                     console.log(`Geen bijlage gevonden in email ${seqno}.`);
                                                 }
-
-                                                resolveEmail(); // Ensure we move to the next email after processing
+                                                resolveEmail();
                                             });
                                         });
                                     });
                                 });
                             }
-
-                            resolve(invoiceData); // Return the results once all emails are processed
-                            imap.end(); // End connection after processing all emails
+                            resolve(invoiceData);
+                            imap.end();
                         };
 
-                        processEmailsSequentially(); // Start processing emails one by one
+                        processEmailsSequentially();
 
                     } else {
                         console.log('Geen e-mails gevonden.');
-                        resolve([]); // Return empty array if no emails found
-                        imap.end(); // End connection if no emails found
+                        resolve([]);
+                        imap.end();
                     }
                 });
-            });
+
+            } catch (err) {
+                reject(`Fout tijdens het openen van de inbox: ${err}`);
+                imap.end();
+            }
         });
 
-        imap.once('error', function (err) {
-            console.log('Error:', err);
-            reject('Error tijdens IMAP connectie:', err);
+        imap.once('error', (err) => {
+            console.log(`IMAP Error: ${err}`);
+            reject(`Error tijdens IMAP connectie: ${err}`);
         });
 
-        imap.once('end', function () {
+        imap.once('end', () => {
             console.log('Connectie beëindigd.');
         });
 
-        // Connect to the IMAP server
         imap.connect();
     });
 }
