@@ -3,7 +3,7 @@ const { getInvoices } = require('./mail'); // Import the function from mail.js
 const { MongoClient } = require('mongodb');
 const dotenv = require('dotenv');
 dotenv.config();
-const app = express();
+const server = express();
 
 const uri = process.env.MONGO_URI;
 const client = new MongoClient(uri);
@@ -17,7 +17,11 @@ async function dbConnection() {
     }
 }
 
-app.get('/api/facturen', async (req, res) => {
+server.get('/', (req, res) => {
+    res.send('<h3>Facturen</h3><br><p>De server is succesvol gestart.</p><br><p>Ga naar <a href="https://api.owencoenraad.nl/facturen" target="_blank"><strong>api.owencoenraad.nl/facturen</strong></a> om te testen.</p>');
+});
+
+server.get('/facturen', async (req, res) => {
     try {
         const results = await getInvoices(); // Fetch and parse the emails
         console.log(results); // Log the results to the server console
@@ -31,7 +35,7 @@ app.get('/api/facturen', async (req, res) => {
 async function serverStart() {
     await dbConnection();
     const PORT = process.env.PORT || 3000;
-    app.listen(PORT, () => {
+    server.listen(PORT, () => {
         console.log(`Server actief op http://localhost:${PORT}`);
     });
 }
