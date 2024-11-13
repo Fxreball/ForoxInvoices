@@ -18,7 +18,7 @@ async function dbConnection() {
 }
 
 server.get('/', (req, res) => {
-    res.send('<h3>Facturen</h3><br><p>De server is succesvol gestart.</p><br><p>Ga naar <a href="https://api.owencoenraad.nl/facturen" target="_blank"><strong>api.owencoenraad.nl/facturen</strong></a> om te testen.</p>');
+    res.send('<h3>Facturen</h3><br><p>De server is succesvol gestart.</p><br><p>Ga naar <a href="http://localhost:3000/facturen" target="_blank"><strong>api.owencoenraad.nl/facturen</strong></a> om te testen.</p>');
 });
 
 server.get('/facturen', async (req, res) => {
